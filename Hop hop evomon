@@ -1,0 +1,127 @@
+-- ==========================================
+-- EVOMON AUTO HOP SERVER (FIXED DETECTOR V2)
+-- ==========================================
+
+print("Menunggu 60 detik agar game termuat sepenuhnya...")
+task.wait(60)
+print("Memulai Evomon Auto Hop Script!")
+
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local LocalPlayer = Players.LocalPlayer
+
+local historyFile = "Evomon_ServerHopHistory.json"
+
+local function getVisitedServers()
+    if isfile and isfile(historyFile) then
+        local success, data = pcall(function()
+            return readfile(historyFile)
+        end)
+        if success and data then
+            return HttpService:JSONDecode(data)
+        end
+    end
+    return {}
+end
+
+local function saveCurrentServer()
+    if writefile then
+        local visited = getVisitedServers()
+        visited[game.JobId] = true
+        
+        local count = 0
+        for _ in pairs(visited) do count = count + 1 end
+        if count > 15 then visited = {} end 
+        
+        writefile(historyFile, HttpService:JSONEncode(visited))
+    end
+end
+
+saveCurrentServer()
+
+-- FUNGSI DETEKSI BARU: Lebih ketat mengecek isi teks UI
+local function isPlayerFighting()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
+    
+    local sceneUI = playerGui:FindFirstChild("SceneUIRoot")
+    if sceneUI then
+        local billboardRoot = sceneUI:FindFirstChild("BillboardUIRoot")
+        if billboardRoot then
+            for _, window in pairs(billboardRoot:GetChildren()) do
+                if window.Name == "HeadDisplayBillboardWindow" then
+                    local nameDisplay = window:FindFirstChild("PlayerNameDisplay")
+                    if nameDisplay and nameDisplay:FindFirstChild("ContentFrame") and nameDisplay.ContentFrame:FindFirstChild("PlayerNameText") then
+                        -- Mencari frame milik player kita
+                        if nameDisplay.ContentFrame.PlayerNameText.Text == LocalPlayer.Name then
+                            local inFightFrame = window:FindFirstChild("PlayerInFightFrame")
+                            if inFightFrame and inFightFrame.Visible then
+                                local contentFrame = inFightFrame:FindFirstChild("ContentFrame")
+                                if contentFrame then
+                                    local fightingText = contentFrame:FindFirstChild("Fighting")
+                                    -- FIX: UI harus Visible DAN teksnya wajib mengandung kata "Fighting"
+                                    if fightingText and fightingText.Visible and fightingText.Text ~= "" and string.find(fightingText.Text, "Fighting") then
+                                        return true
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function hopServer()
+    print("Mencari server sepi terbaru...")
+    local placeId = game.PlaceId
+    local visitedServers = getVisitedServers()
+    local availableServers = {}
+    
+    local url = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
+    
+    local success, result = pcall(function()
+        return game:HttpGet(url)
+    end)
+    
+    if success and result then
+        local decoded = HttpService:JSONDecode(result)
+        if decoded and decoded.data then
+            for _, server in ipairs(decoded.data) do
+                if server.playing < server.maxPlayers and server.playing > 0 and not visitedServers[server.id] and server.id ~= game.JobId then
+                    table.insert(availableServers, server.id)
+                end
+            end
+        end
+    end
+    
+    if #availableServers > 0 then
+        local maxRange = math.min(5, #availableServers)
+        local randomJobId = availableServers[math.random(1, maxRange)]
+        
+        print("Server sepi ditemukan! Menghubungkan ke server baru...")
+        TeleportService:TeleportToPlaceInstance(placeId, randomJobId, LocalPlayer)
+    else
+        warn("Tidak ada server sepi baru saat ini, mencoba kembali...")
+    end
+end
+
+-- Main Loop
+task.spawn(function()
+    while task.wait(3) do
+        if isPlayerFighting() then
+            print("Status: Sedang Fighting... Menunda Hop Server.")
+        else
+            print("Status: Idle terdeteksi! Memastikan stabilitas...")
+            task.wait(3) -- Jeda pengaman short-delay
+            if not isPlayerFighting() then
+                print("Selesai Fighting & Idle Terkonfirmasi! Memulai Server Hop...")
+                hopServer()
+                task.wait(10)
+            end
+        end
+    end
+end)
