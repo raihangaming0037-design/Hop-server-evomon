@@ -4,7 +4,7 @@
 
 -- PENGATURAN AWAL
 local WAKTU_TUNGGU_GAME = 35 -- Dikurangi jadi 10 detik agar cepat terlihat di console
-local TIME_TO_HOP = 40 -- Detik idle sebelum pindah server
+local TIME_TO_HOP = 40        -- Detik idle sebelum pindah server
 
 local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
