@@ -1,64 +1,48 @@
 -- =======================================================
--- EVOMON AUTO HOP (EMERGENCY BYPASS - ANTI HTTP 429)
+-- EVOMON AUTO HOP (SUPER ISOLATED & LABELED EDITION)
 -- =======================================================
 
-print("Menunggu 60 detik agar game termuat sepenuhnya...")
-task.wait(60)
-print("Memulai Evomon Auto Hop Script!")
+-- PENGATURAN AWAL
+local WAKTU_TUNGGU_GAME = 10 -- Dikurangi jadi 10 detik agar cepat terlihat di console
+local TIME_TO_HOP = 20        -- Detik idle sebelum pindah server
 
 local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
+local idleCounter = 0
 
-local TIME_TO_HOP = 25 -- Waktu tunggu idle (detik) sebelum pindah server
-local historyFile = "Evomon_ServerHopHistory.json"
+-- Log Instan untuk penanda bahwa script masuk
+print("[AUTO-HOP] Script berhasil masuk ke executor! Menghitung mundur sebelum aktif...")
 
-local function getVisitedServers()
-    if isfile and isfile(historyFile) then
-        local success, data = pcall(function()
-            return readfile(historyFile)
-        end)
-        if success and data then
-            return HttpService:JSONDecode(data)
-        end
-    end
-    return {}
+for i = WAKTU_TUNGGU_GAME, 1, -1 do
+    print("[AUTO-HOP] Memulai dalam: " .. i .. " detik...")
+    task.wait(1)
 end
 
-local function saveCurrentServer()
-    if writefile then
-        local visited = getVisitedServers()
-        visited[game.JobId] = true
-        local count = 0
-        for _ in pairs(visited) do count = count + 1 end
-        if count > 15 then visited = {} end 
-        writefile(historyFile, HttpService:JSONEncode(visited))
-    end
-end
-
-saveCurrentServer()
+print("[AUTO-HOP] SCRIPT AKTIF! Mulai memantau status karakter...")
 
 local function isPlayerFighting()
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
-    
-    local sceneUI = playerGui:FindFirstChild("SceneUIRoot")
-    if sceneUI then
-        local billboardRoot = sceneUI:FindFirstChild("BillboardUIRoot")
-        if billboardRoot then
-            for _, window in pairs(billboardRoot:GetChildren()) do
-                if window.Name == "HeadDisplayBillboardWindow" then
-                    local nameDisplay = window:FindFirstChild("PlayerNameDisplay")
-                    if nameDisplay and nameDisplay:FindFirstChild("ContentFrame") and nameDisplay.ContentFrame:FindFirstChild("PlayerNameText") then
-                        if nameDisplay.ContentFrame.PlayerNameText.Text == LocalPlayer.Name then
-                            local inFightFrame = window:FindFirstChild("PlayerInFightFrame")
-                            if inFightFrame and inFightFrame.Visible then
-                                local contentFrame = inFightFrame:FindFirstChild("ContentFrame")
-                                if contentFrame then
-                                    local fightingText = contentFrame:FindFirstChild("Fighting")
-                                    if fightingText and fightingText.Visible and fightingText.Text ~= "" and string.find(fightingText.Text, "Fighting") then
-                                        return true
+    local success, fighting = pcall(function()
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if not playerGui then return false end
+        
+        local sceneUI = playerGui:FindFirstChild("SceneUIRoot")
+        if sceneUI then
+            local billboardRoot = sceneUI:FindFirstChild("BillboardUIRoot")
+            if billboardRoot then
+                for _, window in pairs(billboardRoot:GetChildren()) do
+                    if window.Name == "HeadDisplayBillboardWindow" then
+                        local nameDisplay = window:FindFirstChild("PlayerNameDisplay")
+                        if nameDisplay and nameDisplay:FindFirstChild("ContentFrame") and nameDisplay.ContentFrame:FindFirstChild("PlayerNameText") then
+                            if nameDisplay.ContentFrame.PlayerNameText.Text == LocalPlayer.Name then
+                                local inFightFrame = window:FindFirstChild("PlayerInFightFrame")
+                                if inFightFrame and inFightFrame.Visible then
+                                    local contentFrame = inFightFrame:FindFirstChild("ContentFrame")
+                                    if contentFrame then
+                                        local fightingText = contentFrame:FindFirstChild("Fighting")
+                                        if fightingText and fightingText.Visible and fightingText.Text ~= "" and string.find(fightingText.Text, "Fighting") then
+                                            return true
+                                        end
                                     end
                                 end
                             end
@@ -67,78 +51,50 @@ local function isPlayerFighting()
                 end
             end
         end
-    end
-    return false
+        return false
+    end)
+    if success then return fighting else return false end
 end
 
-local function hopServer()
+local function forceHop()
+    print("[AUTO-HOP] TRIGGERED! Memaksa pemindahan server sekarang...")
     local placeId = game.PlaceId
-    local visitedServers = getVisitedServers()
-    local availableServers = {}
     
-    -- Coba ambil data server secara aman
-    print("Mencoba mengambil list server...")
-    local url = "https://games.roproxy.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
+    -- Menggunakan TeleportAsync bawaan engine Roblox
+    local tOpts = Instance.new("TeleportOptions")
+    tOpts.ShouldReserveServer = false
     
-    local success, result = pcall(function()
-        return game:HttpGet(url)
+    local success = pcall(function()
+        TeleportService:TeleportAsync(placeId, {LocalPlayer}, tOpts)
     end)
     
-    -- Jika sukses mengambil data tanpa terblokir 429
-    if success and result and result:find("data") then
-        local decodedSuccess, dataTable = pcall(function() return HttpService:JSONDecode(result) end)
-        if decodedSuccess and dataTable and dataTable.data then
-            for _, server in ipairs(dataTable.data) do
-                if server.playing < server.maxPlayers and server.playing > 0 and not visitedServers[server.id] and server.id ~= game.JobId then
-                    table.insert(availableServers, server.id)
-                end
-            end
-        end
-    end
-    
-    -- EKSEKUSI TELEPORTASI
-    if #availableServers > 0 then
-        local maxRange = math.min(5, #availableServers)
-        local randomJobId = availableServers[math.random(1, maxRange)]
-        print("Server sepi ditemukan! Menteleportasi...")
-        
-        pcall(function() TeleportService:TeleportToPlaceInstance(placeId, randomJobId, LocalPlayer) end)
-        task.wait(1)
-        pcall(function() TeleportService:TeleportToPlaceInstance(placeId, randomJobId) end)
-    else
-        -- [FALLBACK UTAMA] JIKA KENA HTTP 429 / BLOKIR, JALANKAN TRICK INI:
-        print("HTTP 429 / Error Terdeteksi. Mengaktifkan Mode Paksa Teleport!")
-        
+    if not success then
+        print("[AUTO-HOP] Metode Async gagal/diblokir, beralih ke Metode Regular...")
         pcall(function()
             TeleportService:Teleport(placeId, LocalPlayer)
         end)
-        task.wait(1)
-        pcall(function()
-            TeleportService:Teleport(placeId)
-        end)
     end
 end
 
--- MAIN LOOP
-local idleCounter = 0
-
+-- Menjalankan loop di thread terpisah agar tidak terganggu error script lain
 task.spawn(function()
-    while task.wait(1) do
+    while true do
+        task.wait(1)
         if isPlayerFighting() then
             if idleCounter > 0 then
-                print("Kembali bertarung! Reset waktu idle.")
+                print("[AUTO-HOP] Karakter bertarung. Reset hitungan idle.")
                 idleCounter = 0
             end
         else
             idleCounter = idleCounter + 1
-            if idleCounter % 5 == 0 then
-                print("Status: Menunggu Selesai Farm (" .. idleCounter .. "/" .. TIME_TO_HOP .. " detik)")
+            -- Print status setiap 5 detik agar console tidak terlalu penuh tapi tetap terpantau
+            if idleCounter % 5 == 0 or idleCounter == 1 then
+                print("[AUTO-HOP] Status: IDLE (" .. idleCounter .. "/" .. TIME_TO_HOP .. " detik)")
             end
             
             if idleCounter >= TIME_TO_HOP then
-                print("Waktu tunggu habis. Menjalankan auto hop!")
                 idleCounter = 0
-                hopServer()
+                forceHop()
                 task.wait(5)
             end
         end
