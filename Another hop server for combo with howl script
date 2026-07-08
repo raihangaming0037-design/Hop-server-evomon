@@ -1,0 +1,153 @@
+-- =======================================================
+-- EVOMON AUTO HOP (ROPROXY EDITION - ANTI HTTP 429/503)
+-- =======================================================
+
+print("Menunggu 60 detik agar game termuat sepenuhnya...")
+task.wait(60)
+print("Memulai Evomon Auto Hop Script!")
+
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local LocalPlayer = Players.LocalPlayer
+
+local TIME_TO_HOP = 25 -- Waktu tunggu idle (detik) sebelum pindah server
+local historyFile = "Evomon_ServerHopHistory.json"
+
+local function getVisitedServers()
+    if isfile and isfile(historyFile) then
+        local success, data = pcall(function()
+            return readfile(historyFile)
+        end)
+        if success and data then
+            return HttpService:JSONDecode(data)
+        end
+    end
+    return {}
+end
+
+local function saveCurrentServer()
+    if writefile then
+        local visited = getVisitedServers()
+        visited[game.JobId] = true
+        local count = 0
+        for _ in pairs(visited) do count = count + 1 end
+        if count > 15 then visited = {} end 
+        writefile(historyFile, HttpService:JSONEncode(visited))
+    end
+end
+
+saveCurrentServer()
+
+local function isPlayerFighting()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
+    
+    local sceneUI = playerGui:FindFirstChild("SceneUIRoot")
+    if sceneUI then
+        local billboardRoot = sceneUI:FindFirstChild("BillboardUIRoot")
+        if billboardRoot then
+            for _, window in pairs(billboardRoot:GetChildren()) do
+                if window.Name == "HeadDisplayBillboardWindow" then
+                    local nameDisplay = window:FindFirstChild("PlayerNameDisplay")
+                    if nameDisplay and nameDisplay:FindFirstChild("ContentFrame") and nameDisplay.ContentFrame:FindFirstChild("PlayerNameText") then
+                        if nameDisplay.ContentFrame.PlayerNameText.Text == LocalPlayer.Name then
+                            local inFightFrame = window:FindFirstChild("PlayerInFightFrame")
+                            if inFightFrame and inFightFrame.Visible then
+                                local contentFrame = inFightFrame:FindFirstChild("ContentFrame")
+                                if contentFrame then
+                                    local fightingText = contentFrame:FindFirstChild("Fighting")
+                                    if fightingText and fightingText.Visible and fightingText.Text ~= "" and string.find(fightingText.Text, "Fighting") then
+                                        return true
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function hopServer()
+    print("Mencari server sepi terbaru via Proxy...")
+    local placeId = game.PlaceId
+    local visitedServers = getVisitedServers()
+    local availableServers = {}
+    
+    -- FIX: Menggunakan roproxy.com untuk menghindari HTTP 429/503
+    local url = "https://games.roproxy.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
+    
+    local success, result = pcall(function()
+        return game:HttpGet(url)
+    end)
+    
+    if success and result then
+        local decoded = pcall(function() return HttpService:JSONDecode(result) end)
+        if decoded and result:find("data") then
+            local dataTable = HttpService:JSONDecode(result)
+            for _, server in ipairs(dataTable.data) do
+                if server.playing < server.maxPlayers and server.playing > 0 and not visitedServers[server.id] and server.id ~= game.JobId then
+                    table.insert(availableServers, server.id)
+                end
+            end
+        end
+    end
+    
+    if #availableServers > 0 then
+        local maxRange = math.min(5, #availableServers)
+        local randomJobId = availableServers[math.random(1, maxRange)]
+        print("Server sepi ditemukan! Mencoba melakukan bypass teleport...")
+        
+        -- METODE TELEPORT 1 (Standar)
+        local tpSuccess = pcall(function()
+            TeleportService:TeleportToPlaceInstance(placeId, randomJobId, LocalPlayer)
+        end)
+        
+        -- METODE TELEPORT 2 (Jika Metode 1 diblokir/error parameter table)
+        if not tpSuccess then
+            print("Metode 1 Gagal, mencoba Metode 2 (No-Player Argument)...")
+            local tpSuccess2 = pcall(function()
+                TeleportService:TeleportToPlaceInstance(placeId, randomJobId)
+            end)
+            
+            -- METODE TELEPORT 3 (Metode Paksa / Instan Hop)
+            if not tpSuccess2 then
+                print("Metode 2 Gagal, memaksa teleport regular...")
+                pcall(function()
+                    TeleportService:Teleport(placeId, LocalPlayer)
+                end)
+            end
+        end
+    else
+        warn("Gagal mendapatkan server baru, mencoba kembali di loop berikutnya...")
+    end
+end
+
+-- MAIN LOOP (SISTEM TIMER)
+local idleCounter = 0
+
+task.spawn(function()
+    while task.wait(1) do
+        if isPlayerFighting() then
+            if idleCounter > 0 then
+                print("Kembali bertarung! Reset waktu idle.")
+                idleCounter = 0
+            end
+        else
+            idleCounter = idleCounter + 1
+            if idleCounter % 5 == 0 then
+                print("Status: Menunggu Selesai Farm (" .. idleCounter .. "/" .. TIME_TO_HOP .. " detik)")
+            end
+            
+            if idleCounter >= TIME_TO_HOP then
+                print("Waktu tunggu habis. Memulai proses pemindahan server!")
+                idleCounter = 0
+                hopServer()
+                task.wait(5)
+            end
+        end
+    end
+end)
