@@ -1,5 +1,5 @@
 -- =======================================================
--- EVOMON AUTO HOP (ROPROXY EDITION - ANTI HTTP 429/503)
+-- EVOMON AUTO HOP (EMERGENCY BYPASS - ANTI HTTP 429)
 -- =======================================================
 
 print("Menunggu 60 detik agar game termuat sepenuhnya...")
@@ -72,22 +72,22 @@ local function isPlayerFighting()
 end
 
 local function hopServer()
-    print("Mencari server sepi terbaru via Proxy...")
     local placeId = game.PlaceId
     local visitedServers = getVisitedServers()
     local availableServers = {}
     
-    -- FIX: Menggunakan roproxy.com untuk menghindari HTTP 429/503
+    -- Coba ambil data server secara aman
+    print("Mencoba mengambil list server...")
     local url = "https://games.roproxy.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
     
     local success, result = pcall(function()
         return game:HttpGet(url)
     end)
     
-    if success and result then
-        local decoded = pcall(function() return HttpService:JSONDecode(result) end)
-        if decoded and result:find("data") then
-            local dataTable = HttpService:JSONDecode(result)
+    -- Jika sukses mengambil data tanpa terblokir 429
+    if success and result and result:find("data") then
+        local decodedSuccess, dataTable = pcall(function() return HttpService:JSONDecode(result) end)
+        if decodedSuccess and dataTable and dataTable.data then
             for _, server in ipairs(dataTable.data) do
                 if server.playing < server.maxPlayers and server.playing > 0 and not visitedServers[server.id] and server.id ~= game.JobId then
                     table.insert(availableServers, server.id)
@@ -96,37 +96,30 @@ local function hopServer()
         end
     end
     
+    -- EKSEKUSI TELEPORTASI
     if #availableServers > 0 then
         local maxRange = math.min(5, #availableServers)
         local randomJobId = availableServers[math.random(1, maxRange)]
-        print("Server sepi ditemukan! Mencoba melakukan bypass teleport...")
+        print("Server sepi ditemukan! Menteleportasi...")
         
-        -- METODE TELEPORT 1 (Standar)
-        local tpSuccess = pcall(function()
-            TeleportService:TeleportToPlaceInstance(placeId, randomJobId, LocalPlayer)
-        end)
-        
-        -- METODE TELEPORT 2 (Jika Metode 1 diblokir/error parameter table)
-        if not tpSuccess then
-            print("Metode 1 Gagal, mencoba Metode 2 (No-Player Argument)...")
-            local tpSuccess2 = pcall(function()
-                TeleportService:TeleportToPlaceInstance(placeId, randomJobId)
-            end)
-            
-            -- METODE TELEPORT 3 (Metode Paksa / Instan Hop)
-            if not tpSuccess2 then
-                print("Metode 2 Gagal, memaksa teleport regular...")
-                pcall(function()
-                    TeleportService:Teleport(placeId, LocalPlayer)
-                end)
-            end
-        end
+        pcall(function() TeleportService:TeleportToPlaceInstance(placeId, randomJobId, LocalPlayer) end)
+        task.wait(1)
+        pcall(function() TeleportService:TeleportToPlaceInstance(placeId, randomJobId) end)
     else
-        warn("Gagal mendapatkan server baru, mencoba kembali di loop berikutnya...")
+        -- [FALLBACK UTAMA] JIKA KENA HTTP 429 / BLOKIR, JALANKAN TRICK INI:
+        print("HTTP 429 / Error Terdeteksi. Mengaktifkan Mode Paksa Teleport!")
+        
+        pcall(function()
+            TeleportService:Teleport(placeId, LocalPlayer)
+        end)
+        task.wait(1)
+        pcall(function()
+            TeleportService:Teleport(placeId)
+        end)
     end
 end
 
--- MAIN LOOP (SISTEM TIMER)
+-- MAIN LOOP
 local idleCounter = 0
 
 task.spawn(function()
@@ -143,7 +136,7 @@ task.spawn(function()
             end
             
             if idleCounter >= TIME_TO_HOP then
-                print("Waktu tunggu habis. Memulai proses pemindahan server!")
+                print("Waktu tunggu habis. Menjalankan auto hop!")
                 idleCounter = 0
                 hopServer()
                 task.wait(5)
