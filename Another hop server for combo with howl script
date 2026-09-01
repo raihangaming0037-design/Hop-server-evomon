@@ -1,115 +1,64 @@
--- =======================================================
--- EVOMON AUTO HOP (JNKIE-HUB BYPASS & ANTI-FREEZE)
--- =======================================================
+-- Konfigurasi Waktu
+local waktuTungguMenit = 45
+local waktuTungguDetik = waktuTungguMenit * 60
 
-local TIME_TO_HOP = 90 -- Detik idle sebelum mulai jebol server
+-- Setup GUI
+local CoreGui = game:GetService("CoreGui")
+-- Gunakan gethui() untuk menyembunyikan UI dari anti-cheat jika executor mendukung, jika tidak gunakan CoreGui
+local parentGui = (gethui and gethui()) or CoreGui 
 
-local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local LocalPlayer = Players.LocalPlayer
-local idleCounter = 0
-
-print("[AUTO-HOP] Script dimuat! Berjalan mandiri terpisah dari sistem Jnkie.")
-
-local function isPlayerFighting()
-    local success, fighting = pcall(function()
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if not playerGui then return false end
-        
-        local sceneUI = playerGui:FindFirstChild("SceneUIRoot")
-        if sceneUI then
-            local billboardRoot = sceneUI:FindFirstChild("BillboardUIRoot")
-            if billboardRoot then
-                for _, window in pairs(billboardRoot:GetChildren()) do
-                    if window.Name == "HeadDisplayBillboardWindow" then
-                        local nameDisplay = window:FindFirstChild("PlayerNameDisplay")
-                        if nameDisplay and nameDisplay:FindFirstChild("ContentFrame") and nameDisplay.ContentFrame:FindFirstChild("PlayerNameText") then
-                            if nameDisplay.ContentFrame.PlayerNameText.Text == LocalPlayer.Name then
-                                local inFightFrame = window:FindFirstChild("PlayerInFightFrame")
-                                if inFightFrame and inFightFrame.Visible then
-                                    local contentFrame = inFightFrame:FindFirstChild("ContentFrame")
-                                    if contentFrame then
-                                        local fightingText = contentFrame:FindFirstChild("Fighting")
-                                        if fightingText and fightingText.Visible and fightingText.Text ~= "" and string.find(fightingText.Text, "Fighting") then
-                                            return true
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        return false
-    end)
-    if success then return fighting else return false end
+-- Hapus GUI lama jika script dieksekusi ulang secara manual
+if parentGui:FindFirstChild("AutoHopCountdown") then
+    parentGui.AutoHopCountdown:Destroy()
 end
 
--- FUNGSI BRUTAL: Spam semua celah teleportasi sampai tembus lag Jnkie
-local function brutalHop()
-    print("[AUTO-HOP] Memulai pembongkaran server! Menembus proteksi...")
-    local placeId = game.PlaceId
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoHopCountdown"
+ScreenGui.Parent = parentGui
+ScreenGui.ResetOnSpawn = false
+
+local CountdownLabel = Instance.new("TextLabel")
+CountdownLabel.Parent = ScreenGui
+CountdownLabel.Size = UDim2.new(0, 250, 0, 50)
+CountdownLabel.Position = UDim2.new(0.5, -125, 0, 20) -- Posisi di tengah atas layar
+CountdownLabel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+CountdownLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+CountdownLabel.Font = Enum.Font.Code
+CountdownLabel.TextScaled = true
+CountdownLabel.BorderSizePixel = 2
+CountdownLabel.BorderColor3 = Color3.fromRGB(85, 255, 127) -- Border hijau
+CountdownLabel.Text = "Memulai Auto Hop..."
+
+-- Fungsi format waktu agar menjadi tampilan (Menit:Detik)
+local function formatTime(seconds)
+    local minutes = math.floor(seconds / 60)
+    local remainingSeconds = seconds % 60
+    return string.format("%02d:%02d", minutes, remainingSeconds)
+end
+
+-- Looping Hitung Mundur
+for sisaDetik = waktuTungguDetik, 0, -1 do
+    CountdownLabel.Text = "Auto Hop: " .. formatTime(sisaDetik)
+    task.wait(1)
+end
+
+-- Waktu habis, persiapan teleport
+CountdownLabel.Text = "Mencari Server Baru..."
+CountdownLabel.TextColor3 = Color3.fromRGB(85, 255, 127)
+
+-- Setup Remote Event
+local args = {
+    "PrivateServer"
+}
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local AFKTeleport = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("AFKTeleport")
+
+-- Eksekusi Teleport (Loop jika server lambat merespon)
+while true do
+    pcall(function()
+        AFKTeleport:FireServer(unpack(args))
+    end)
     
-    -- Loop tanpa henti setiap 0.5 detik sampai player benar-benar keluar dari server
-    task.spawn(function()
-        while true do
-            -- CARA 1: TeleportAsync Standar
-            pcall(function()
-                local tOpts = Instance.new("TeleportOptions")
-                tOpts.ShouldReserveServer = false
-                TeleportService:TeleportAsync(placeId, {LocalPlayer}, tOpts)
-            end)
-            
-            -- CARA 2: Teleport Klasik dengan Argumen Player
-            pcall(function()
-                TeleportService:Teleport(placeId, LocalPlayer)
-            end)
-            
-            -- CARA 3: Teleport Tanpa Argumen Player (Bypass tipe data table)
-            pcall(function()
-                TeleportService:Teleport(placeId)
-            end)
-            
-            -- CARA 4: Memanfaatkan Rejoin Instan bawaan engine luar jika disupport
-            pcall(function()
-                if #game:GetService("Players"):GetPlayers() <= 1 then
-                    LocalPlayer:Kick("\n[AUTO-HOP] Server Sepi, Mengosongkan Slot...")
-                else
-                    TeleportService:TeleportToPlaceInstance(placeId, game.JobId, LocalPlayer)
-                end
-            end)
-            
-            task.wait(0.5) -- Kecepatan spam (setengah detik sekali)
-        end
-    end)
+    CountdownLabel.Text = "Mengirim Request..."
+    task.wait(5) -- Jeda 5 detik sebelum menembak remote lagi
 end
-
--- MAIN LOOP (Kebal Freeze)
-task.spawn(function()
-    while true do
-        task.wait(1)
-        
-        -- Bungkus dengan pcall agar jika Delta lag parah, loop tidak ikutan mati
-        local success, fighting = pcall(isPlayerFighting)
-        
-        if success and fighting then
-            if idleCounter > 0 then
-                print("[AUTO-HOP] Sedang bertarung (Jnkie aktif). Reset timer.")
-                idleCounter = 0
-            end
-        else
-            idleCounter = idleCounter + 1
-            
-            if idleCounter % 5 == 0 or idleCounter == 1 then
-                print("[AUTO-HOP] Menunggu Mob Habis... " .. idleCounter .. "/" .. TIME_TO_HOP .. " Detik.")
-            end
-            
-            if idleCounter >= TIME_TO_HOP then
-                idleCounter = 0
-                brutalHop()
-                break -- Hentikan loop utama karena script sudah fokus melakukan spam pindah server
-            end
-        end
-    end
-end)
