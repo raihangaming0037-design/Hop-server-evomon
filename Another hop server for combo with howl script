@@ -1,13 +1,35 @@
--- Konfigurasi Waktu
+-- ==========================================
+-- SISTEM ANTI-AFK (Mencegah Kick Idle Roblox)
+-- ==========================================
+local VirtualUser = game:GetService("VirtualUser")
+local Players = game:GetService("Players")
+
+Players.LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+    print("[Anti-AFK] Sistem Roblox mencoba kick, Anti-AFK diaktifkan.")
+end)
+
+-- Untuk keamanan tambahan, karakter akan lompat setiap 15 menit
+task.spawn(function()
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    while true do
+        task.wait(15 * 60) -- Menunggu 15 Menit
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+        task.wait(0.1)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+    end
+end)
+
+-- ==========================================
+-- SISTEM HITUNG MUNDUR & AUTO HOP UI
+-- ==========================================
 local waktuTungguMenit = 45
 local waktuTungguDetik = waktuTungguMenit * 60
 
--- Setup GUI
 local CoreGui = game:GetService("CoreGui")
--- Gunakan gethui() untuk menyembunyikan UI dari anti-cheat jika executor mendukung, jika tidak gunakan CoreGui
 local parentGui = (gethui and gethui()) or CoreGui 
 
--- Hapus GUI lama jika script dieksekusi ulang secara manual
 if parentGui:FindFirstChild("AutoHopCountdown") then
     parentGui.AutoHopCountdown:Destroy()
 end
@@ -20,45 +42,42 @@ ScreenGui.ResetOnSpawn = false
 local CountdownLabel = Instance.new("TextLabel")
 CountdownLabel.Parent = ScreenGui
 CountdownLabel.Size = UDim2.new(0, 250, 0, 50)
-CountdownLabel.Position = UDim2.new(0.5, -125, 0, 20) -- Posisi di tengah atas layar
+CountdownLabel.Position = UDim2.new(0.5, -125, 0, 20)
 CountdownLabel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 CountdownLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 CountdownLabel.Font = Enum.Font.Code
 CountdownLabel.TextScaled = true
 CountdownLabel.BorderSizePixel = 2
-CountdownLabel.BorderColor3 = Color3.fromRGB(85, 255, 127) -- Border hijau
+CountdownLabel.BorderColor3 = Color3.fromRGB(85, 255, 127)
 CountdownLabel.Text = "Memulai Auto Hop..."
 
--- Fungsi format waktu agar menjadi tampilan (Menit:Detik)
 local function formatTime(seconds)
     local minutes = math.floor(seconds / 60)
     local remainingSeconds = seconds % 60
     return string.format("%02d:%02d", minutes, remainingSeconds)
 end
 
--- Looping Hitung Mundur
+-- Looping Timer
 for sisaDetik = waktuTungguDetik, 0, -1 do
     CountdownLabel.Text = "Auto Hop: " .. formatTime(sisaDetik)
     task.wait(1)
 end
 
--- Waktu habis, persiapan teleport
+-- Eksekusi Teleport
 CountdownLabel.Text = "Mencari Server Baru..."
 CountdownLabel.TextColor3 = Color3.fromRGB(85, 255, 127)
 
--- Setup Remote Event
 local args = {
     "PrivateServer"
 }
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local AFKTeleport = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("AFKTeleport")
 
--- Eksekusi Teleport (Loop jika server lambat merespon)
 while true do
     pcall(function()
         AFKTeleport:FireServer(unpack(args))
     end)
     
     CountdownLabel.Text = "Mengirim Request..."
-    task.wait(5) -- Jeda 5 detik sebelum menembak remote lagi
+    task.wait(5)
 end
